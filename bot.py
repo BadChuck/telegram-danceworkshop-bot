@@ -1,146 +1,119 @@
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+# ===============================================
+# 🟢 Телеграм-бот для заполнения заявки на фестиваль
+# Python 3.11+ и python-telegram-bot v20+
+# Автор: Илья
+# ===============================================
 
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
+import logging
+
+# -----------------------------
+# ВАЖНО! Вставь сюда свой токен от BotFather
 TOKEN = "8274020327:AAH_oDLQtAud6Sbwiz8fCBUwsHXr7_wNOUg"
 
-(
-    MUNICIPALITY,
-    FIO,
-    AGE,
-    TEAM,
-    ORG,
-    EXPERIENCE,
-    PHONE,
-    SOURCE,
-    CONSENT
-) = range(9)
+# ВАЖНО! Вставь сюда chat_id группы, куда бот будет отправлять ответы
+GROUP_CHAT_ID = -1003796915790
 
+# Включаем логирование (чтобы видеть ошибки)
+logging.basicConfig(level=logging.INFO)
 
+# -----------------------------
+# Здесь храним прогресс каждого пользователя (какой вопрос на каком шаге)
+user_data = {}
+
+# -----------------------------
+# Список вопросов анкеты
+questions = [
+    "1️⃣ Муниципальное образование:",
+    "2️⃣ Фамилия, имя, отчество:",
+    "3️⃣ Возраст:",
+    "4️⃣ Название коллектива:",
+    "5️⃣ Название направляющей организации:",
+    "6️⃣ Стаж работы:",
+    "7️⃣ Контактный телефон:",
+    "8️⃣ Откуда узнали о мероприятии:",
+    "9️⃣ Согласие на обработку ПД (ответьте 'да'):\n"
+    "Заполняя и отправляя настоящую форму, я даю согласие на обработку моих персональных данных и передачу их третьим лицам."
+]
+
+# -----------------------------
+# Функция стартового сообщения
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [["Заполнить заявку"]]
-    await update.message.reply_text(
-        "Нажмите кнопку чтобы заполнить заявку",
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    )
+    keyboard = [[InlineKeyboardButton("Заполнить заявку", callback_data='start_form')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Привет! Нажми кнопку, чтобы заполнить заявку:", reply_markup=reply_markup)
 
+# -----------------------------
+# Функция обработки нажатия кнопки
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()  # обязательно отвечаем на нажатие кнопки
+    user_id = query.from_user.id
+    # создаем запись о пользователе и начинаем с первого вопроса
+    user_data[user_id] = {"step": 0, "answers": []}
+    await query.edit_message_text(text=questions[0])
 
-async def start_form(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("1. Муниципальное образование:")
-    return MUNICIPALITY
+# -----------------------------
+# Функция обработки текста пользователя
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
 
+    # Если пользователь еще не нажал кнопку /start
+    if user_id not in user_data:
+        await update.message.reply_text("Сначала нажмите /start")
+        return
 
-async def municipality(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["municipality"] = update.message.text
-    await update.message.reply_text("2. Фамилия Имя Отчество:")
-    return FIO
+    # Сохраняем ответ
+    step = user_data[user_id]["step"]
+    text = update.message.text
+    user_data[user_id]["answers"].append(text)
+    step += 1
 
+    # Если вопросы еще остались
+    if step < len(questions):
+        user_data[user_id]["step"] = step
+        await update.message.reply_text(questions[step])
+    else:
+        # Формируем красивое сообщение для группы
+        answers = user_data[user_id]["answers"]
+        message_text = "📄 Новая заявка на фестиваль:\n\n"
+        for q, a in zip(questions, answers):
+            message_text += f"{q} {a}\n"
 
-async def fio(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["fio"] = update.message.text
-    await update.message.reply_text("3. Возраст:")
-    return AGE
+        # Отправляем в группу
+        await context.bot.send_message(chat_id=GROUP_CHAT_ID, text=message_text)
 
+        # Сообщаем пользователю
+        await update.message.reply_text("Спасибо! Заявка принята ✅")
 
-async def age(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["age"] = update.message.text
-    await update.message.reply_text("4. Название коллектива:")
-    return TEAM
+        # Удаляем пользователя из памяти
+        del user_data[user_id]
 
-
-async def team(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["team"] = update.message.text
-    await update.message.reply_text("5. Название направляющей организации:")
-    return ORG
-
-
-async def org(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["org"] = update.message.text
-    await update.message.reply_text("6. Стаж работы:")
-    return EXPERIENCE
-
-
-async def experience(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["experience"] = update.message.text
-    await update.message.reply_text("7. Контактный телефон:")
-    return PHONE
-
-
-async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["phone"] = update.message.text
-    await update.message.reply_text("8. Откуда узнали о мероприятии?")
-    return SOURCE
-
-
-async def source(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["source"] = update.message.text
-
-    keyboard = [["Согласен"]]
-
-    text = """9. Согласие на обработку персональных данных.
-
-Заполняя и отправляя настоящую форму, я даю согласие на обработку моих персональных данных: ФИО, номер телефона организатору мероприятия.
-
-Также я даю согласие на передачу указанных персональных данных третьему лицу для размещения анкеты и обеспечения работы сервиса сбора ответов.
-
-Я проинформирован, что обработка персональных данных осуществляется в соответствии с ФЗ №152."""
-
-    await update.message.reply_text(text, reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
-    return CONSENT
-
-
-async def consent(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.text != "Согласен":
-        await update.message.reply_text("Для отправки анкеты необходимо согласие.")
-        return CONSENT
-
-    data = context.user_data
-
-    text = f"""
-Новая заявка:
-
-Муниципалитет: {data['municipality']}
-ФИО: {data['fio']}
-Возраст: {data['age']}
-Коллектив: {data['team']}
-Организация: {data['org']}
-Стаж: {data['experience']}
-Телефон: {data['phone']}
-Источник: {data['source']}
-"""
-
-    await update.message.reply_text("Спасибо. Заявка отправлена.")
-
-    await context.bot.send_message(
-        chat_id="-1003796915790",
-        text=text
-    )
-
-    return ConversationHandler.END
-
-
+# -----------------------------
+# Главная функция запуска бота
 def main():
+    # Создаем приложение
     app = ApplicationBuilder().token(TOKEN).build()
 
-    conv = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("Заполнить заявку"), start_form)],
-        states={
-            MUNICIPALITY: [MessageHandler(filters.TEXT, municipality)],
-            FIO: [MessageHandler(filters.TEXT, fio)],
-            AGE: [MessageHandler(filters.TEXT, age)],
-            TEAM: [MessageHandler(filters.TEXT, team)],
-            ORG: [MessageHandler(filters.TEXT, org)],
-            EXPERIENCE: [MessageHandler(filters.TEXT, experience)],
-            PHONE: [MessageHandler(filters.TEXT, phone)],
-            SOURCE: [MessageHandler(filters.TEXT, source)],
-            CONSENT: [MessageHandler(filters.TEXT, consent)],
-        },
-        fallbacks=[]
-    )
-
+    # Обработчик команды /start
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(conv)
+    # Обработчик кнопки "Заполнить заявку"
+    app.add_handler(CallbackQueryHandler(button, pattern="start_form"))
+    # Обработчик текстовых сообщений пользователя
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Запускаем бота
     app.run_polling()
 
-
-main()
+# -----------------------------
+# Запуск бота
+if __name__ == "__main__":
+    main()
