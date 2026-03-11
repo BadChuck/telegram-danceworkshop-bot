@@ -16,17 +16,20 @@ from telegram.ext import (
 import logging
 
 # -----------------------------
-# ВАЖНО! Вставь сюда свой токен от BotFather
-TOKEN = "8274020327:AAH_oDLQtAud6Sbwiz8fCBUwsHXr7_wNOUg"
+# ⚠️ ВАЖНО! НЕ вставляем токен напрямую
+# На Replit будем использовать Secrets
+# -----------------------------
+import os
+TOKEN = 8274020327:AAH_oDLQtAud6Sbwiz8fCBUwsHXr7_wNOUg  # токен хранится в Replit Secrets
 
-# ВАЖНО! Вставь сюда chat_id группы, куда бот будет отправлять ответы
+# ⚠️ Вставь сюда chat_id группы
 GROUP_CHAT_ID = -1003796915790
 
-# Включаем логирование (чтобы видеть ошибки)
+# Включаем логирование
 logging.basicConfig(level=logging.INFO)
 
 # -----------------------------
-# Здесь храним прогресс каждого пользователя (какой вопрос на каком шаге)
+# Прогресс каждого пользователя
 user_data = {}
 
 # -----------------------------
@@ -40,49 +43,57 @@ questions = [
     "6️⃣ Стаж работы:",
     "7️⃣ Контактный телефон:",
     "8️⃣ Откуда узнали о мероприятии:",
-    "9️⃣ Согласие на обработку ПД (ответьте 'да'):\n"
-    "Заполняя и отправляя настоящую форму, я даю согласие на обработку моих персональных данных и передачу их третьим лицам."
+    "9️⃣ Согласие на обработку ПД (напиши *СОГЛАСЕН*):\n"
+    "Заполняя и отправляя форму, я даю согласие на обработку моих персональных данных и передачу их третьим лицам."
 ]
 
 # -----------------------------
-# Функция стартового сообщения
+# Стартовое сообщение
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("Заполнить заявку", callback_data='start_form')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Привет! Нажми кнопку, чтобы заполнить заявку:", reply_markup=reply_markup)
 
 # -----------------------------
-# Функция обработки нажатия кнопки
+# Кнопка начала анкеты
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()  # обязательно отвечаем на нажатие кнопки
+    await query.answer()
     user_id = query.from_user.id
-    # создаем запись о пользователе и начинаем с первого вопроса
     user_data[user_id] = {"step": 0, "answers": []}
     await query.edit_message_text(text=questions[0])
 
 # -----------------------------
-# Функция обработки текста пользователя
+# Обработка текстовых ответов
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
 
-    # Если пользователь еще не нажал кнопку /start
     if user_id not in user_data:
         await update.message.reply_text("Сначала нажмите /start")
         return
 
-    # Сохраняем ответ
     step = user_data[user_id]["step"]
     text = update.message.text
+
+    # -----------------------------
+    # Проверка последнего вопроса (согласие)
+    if step == len(questions) - 1:
+        if text.strip().upper() != "СОГЛАСЕН":
+            await update.message.reply_text(
+                "❌ Вы должны написать *СОГЛАСЕН*, чтобы отправить форму. Попробуйте ещё раз."
+            )
+            return
+
+    # Сохраняем ответ
     user_data[user_id]["answers"].append(text)
     step += 1
 
-    # Если вопросы еще остались
+    # Если ещё вопросы есть
     if step < len(questions):
         user_data[user_id]["step"] = step
         await update.message.reply_text(questions[step])
     else:
-        # Формируем красивое сообщение для группы
+        # Формируем сообщение для группы
         answers = user_data[user_id]["answers"]
         message_text = "📄 Новая заявка на фестиваль:\n\n"
         for q, a in zip(questions, answers):
@@ -98,22 +109,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         del user_data[user_id]
 
 # -----------------------------
-# Главная функция запуска бота
-def main():
-    # Создаем приложение
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    # Обработчик команды /start
-    app.add_handler(CommandHandler("start", start))
-    # Обработчик кнопки "Заполнить заявку"
-    app.add_handler(CallbackQueryHandler(button, pattern="start_form"))
-    # Обработчик текстовых сообщений пользователя
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # Запускаем бота
-    app.run_polling()
+# Проверка, что бот жив
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Я жив и работаю на Replit! ✅")
 
 # -----------------------------
 # Запуск бота
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("ping", ping))  # проверка
+    app.add_handler(CallbackQueryHandler(button, pattern="start_form"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.run_polling()
+
 if __name__ == "__main__":
     main()
